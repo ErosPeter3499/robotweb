@@ -40,9 +40,9 @@
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       const ethCurrentPriceEndpoint = "https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT";
-      const ethHistoryEndpoint = "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1s&limit=30";
+      const ethHistoryEndpoint = "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d&limit=300";
       const btcCurrentPriceEndpoint = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT";
-      const btcHistoryEndpoint = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1s&limit=30";
+      const btcHistoryEndpoint = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=300";
       const ethCurrentPriceElement = document.getElementById("eth-currentPrice");
       const btcCurrentPriceElement = document.getElementById("btc-currentPrice");
       const ethCtx = document.getElementById('eth-priceChart').getContext('2d');
@@ -50,9 +50,13 @@
       const ethLabels = [];
       const ethPrices = [];
       const ethRsi = [];
+      const ethBollingerUpper = [];
+      const ethBollingerLower = [];
       const btcLabels = [];
       const btcPrices = [];
       const btcRsi = [];
+      const btcBollingerUpper = [];
+      const btcBollingerLower = [];
       const maxPoints = 30; // 30 elements
 
       function calculateRSI(prices, period = 14) {
@@ -84,6 +88,29 @@
         return rsi;
       }
 
+      function calculateBollingerBands(prices, period = 50, multiplier = 1) {
+        const sma = [];
+        const upperBand = [];
+        const lowerBand = [];
+
+        for (let i = 0; i < prices.length; i++) {
+          if (i >= period - 1) {
+            const slice = prices.slice(i - period + 1, i + 1);
+            const mean = slice.reduce((a, b) => a + b, 0) / period;
+            const stdDev = Math.sqrt(slice.map(x => Math.pow(x - mean, 2)).reduce((a, b) => a + b) / period);
+            sma.push(mean);
+            upperBand.push(mean + multiplier * stdDev);
+            lowerBand.push(mean - multiplier * stdDev);
+          } else {
+            sma.push(null);
+            upperBand.push(null);
+            lowerBand.push(null);
+          }
+        }
+
+        return { sma, upperBand, lowerBand };
+      }
+
       const ethChart = new Chart(ethCtx, {
         type: 'line',
         data: {
@@ -91,16 +118,28 @@
           datasets: [{
             label: 'ETH Árfolyam (USD)',
             data: ethPrices,
-            borderColor: 'rgba(75, 192, 192, 1)',
+            borderColor: 'blue',
             borderWidth: 1,
             fill: false
           }, {
             label: 'ETH RSI',
             data: ethRsi,
-            borderColor: 'rgba(192, 75, 75, 1)',
+            borderColor: 'red',
             borderWidth: 1,
             fill: false,
             yAxisID: 'rsi'
+          }, {
+            label: 'ETH Bollinger Upper',
+            data: ethBollingerUpper,
+            borderColor: 'yellow',
+            borderWidth: 1,
+            fill: false
+          }, {
+            label: 'ETH Bollinger Lower',
+            data: ethBollingerLower,
+            borderColor: 'yellow',
+            borderWidth: 1,
+            fill: false
           }]
         },
         options: {
@@ -144,16 +183,28 @@
           datasets: [{
             label: 'BTC Árfolyam (USD)',
             data: btcPrices,
-            borderColor: 'rgba(255, 99, 132, 1)',
+            borderColor: 'black',
             borderWidth: 1,
             fill: false
           }, {
             label: 'BTC RSI',
             data: btcRsi,
-            borderColor: 'rgba(99, 132, 255, 1)',
+            borderColor: 'red',
             borderWidth: 1,
             fill: false,
             yAxisID: 'rsi'
+          }, {
+            label: 'BTC Bollinger Upper',
+            data: btcBollingerUpper,
+            borderColor: 'yellow',
+            borderWidth: 1,
+            fill: false
+          }, {
+            label: 'BTC Bollinger Lower',
+            data: btcBollingerLower,
+            borderColor: 'yellow',
+            borderWidth: 1,
+            fill: false
           }]
         },
         options: {
@@ -190,7 +241,7 @@
         }
       });
 
-      function fetchCurrentPrice(endpoint, currentPriceElement, labels, prices, rsi, chart) {
+      function fetchCurrentPrice(endpoint, currentPriceElement, labels, prices, rsi, bollingerUpper, bollingerLower, chart) {
         fetch(endpoint)
           .then((response) => response.json())
           .then((data) => {
@@ -214,6 +265,16 @@
               }
             }
 
+            if (prices.length >= 20) {
+              const { upperBand, lowerBand } = calculateBollingerBands(prices);
+              bollingerUpper.push(upperBand[upperBand.length - 1]);
+              bollingerLower.push(lowerBand[lowerBand.length - 1]);
+              if (bollingerUpper.length > maxPoints) {
+                bollingerUpper.shift();
+                bollingerLower.shift();
+              }
+            }
+
             chart.update();
           })
           .catch((error) => {
@@ -222,7 +283,7 @@
           });
       }
 
-      function fetchHistory(endpoint, labels, prices, rsi, chart, callback) {
+      function fetchHistory(endpoint, labels, prices, rsi, bollingerUpper, bollingerLower, chart, callback) {
         fetch(endpoint)
           .then((response) => response.json())
           .then((data) => {
@@ -237,6 +298,12 @@
               rsi.push(...rsiValues);
             }
 
+            if (prices.length >= 20) {
+              const { upperBand, lowerBand } = calculateBollingerBands(prices);
+              bollingerUpper.push(...upperBand);
+              bollingerLower.push(...lowerBand);
+            }
+
             chart.update();
             if (callback) callback();
           })
@@ -246,14 +313,14 @@
       }
 
       // Fetch the ETH and BTC price history immediately when the page loads
-      fetchHistory(ethHistoryEndpoint, ethLabels, ethPrices, ethRsi, ethChart, () => {
+      fetchHistory(ethHistoryEndpoint, ethLabels, ethPrices, ethRsi, ethBollingerUpper, ethBollingerLower, ethChart, () => {
         // Refresh the current ETH price every second (1000 milliseconds)
-        setInterval(() => fetchCurrentPrice(ethCurrentPriceEndpoint, ethCurrentPriceElement, ethLabels, ethPrices, ethRsi, ethChart), 1000);
+        setInterval(() => fetchCurrentPrice(ethCurrentPriceEndpoint, ethCurrentPriceElement, ethLabels, ethPrices, ethRsi, ethBollingerUpper, ethBollingerLower, ethChart), 1000);
       });
 
-      fetchHistory(btcHistoryEndpoint, btcLabels, btcPrices, btcRsi, btcChart, () => {
+      fetchHistory(btcHistoryEndpoint, btcLabels, btcPrices, btcRsi, btcBollingerUpper, btcBollingerLower, btcChart, () => {
         // Refresh the current BTC price every second (1000 milliseconds)
-        setInterval(() => fetchCurrentPrice(btcCurrentPriceEndpoint, btcCurrentPriceElement, btcLabels, btcPrices, btcRsi, btcChart), 1000);
+        setInterval(() => fetchCurrentPrice(btcCurrentPriceEndpoint, btcCurrentPriceElement, btcLabels, btcPrices, btcRsi, btcBollingerUpper, btcBollingerLower, btcChart), 1000);
       });
     });
   </script>
