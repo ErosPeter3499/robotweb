@@ -1,41 +1,261 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BTC Árfolyam</title>
-  </head>
-  <body>
-    <main>
-      <h1>BTC Árfolyam</h1>
-      <p id="btc-price">Árfolyam betöltése...</p>
-    </main>
-    <script>
-      document.addEventListener("DOMContentLoaded", () => {
-        const endpoint =
-          "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT";
-        const priceElement = document.getElementById("btc-price");
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Binance ETH és BTC Árfolyam Történet</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <style>
+    .chart-container {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .chart {
+      flex: 1 1 45%; /* Flex-grow, flex-shrink, flex-basis */
+      margin: 10px;
+    }
+    canvas {
+      width: 100% !important;
+      height: auto !important;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ETH és BTC Árfolyam Történet</h1>
+    <div class="chart-container">
+      <div class="chart">
+        <p id="eth-currentPrice">Aktuális ETH Árfolyam betöltése...</p>
+        <canvas id="eth-priceChart"></canvas>
+      </div>
+      <div class="chart">
+        <p id="btc-currentPrice">Aktuális BTC Árfolyam betöltése...</p>
+        <canvas id="btc-priceChart"></canvas>
+      </div>
+    </div>
+  </main>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const ethCurrentPriceEndpoint = "https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT";
+      const ethHistoryEndpoint = "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1s&limit=30";
+      const btcCurrentPriceEndpoint = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT";
+      const btcHistoryEndpoint = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1s&limit=30";
+      const ethCurrentPriceElement = document.getElementById("eth-currentPrice");
+      const btcCurrentPriceElement = document.getElementById("btc-currentPrice");
+      const ethCtx = document.getElementById('eth-priceChart').getContext('2d');
+      const btcCtx = document.getElementById('btc-priceChart').getContext('2d');
+      const ethLabels = [];
+      const ethPrices = [];
+      const ethRsi = [];
+      const btcLabels = [];
+      const btcPrices = [];
+      const btcRsi = [];
+      const maxPoints = 30; // 30 elements
 
-        function fetchBTCPrice() {
-          fetch(endpoint)
-            .then((response) => response.json())
-            .then((data) => {
-              let roundedNumber = parseFloat(data.price).toFixed(2);
-              priceElement.textContent = `BTC Árfolyam: ${roundedNumber} USD`;
-            })
-            .catch((error) => {
-              console.error("Error fetching BTC price:", error);
-              priceElement.textContent =
-                "Hiba történt az árfolyam betöltésekor.";
-            });
+      function calculateRSI(prices, period = 14) {
+        let gains = 0;
+        let losses = 0;
+        for (let i = 1; i < period + 1; i++) {
+          const change = prices[i] - prices[i - 1];
+          if (change > 0) {
+            gains += change;
+          } else {
+            losses -= change;
+          }
         }
+        let avgGain = gains / period;
+        let avgLoss = losses / period;
+        const rsi = [100 - (100 / (1 + avgGain / avgLoss))];
 
-        // Fetch the BTC price immediately when the page loads
-        fetchBTCPrice();
+        for (let i = period + 1; i < prices.length; i++) {
+          const change = prices[i] - prices[i - 1];
+          if (change > 0) {
+            avgGain = (avgGain * (period - 1) + change) / period;
+            avgLoss = (avgLoss * (period - 1)) / period;
+          } else {
+            avgGain = (avgGain * (period - 1)) / period;
+            avgLoss = (avgLoss * (period - 1) - change) / period;
+          }
+          rsi.push(100 - (100 / (1 + avgGain / avgLoss)));
+        }
+        return rsi;
+      }
 
-        // Refresh the BTC price every 60 seconds (60000 milliseconds)
-        setInterval(fetchBTCPrice, 2000);
+      const ethChart = new Chart(ethCtx, {
+        type: 'line',
+        data: {
+          labels: ethLabels,
+          datasets: [{
+            label: 'ETH Árfolyam (USD)',
+            data: ethPrices,
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 1,
+            fill: false
+          }, {
+            label: 'ETH RSI',
+            data: ethRsi,
+            borderColor: 'rgba(192, 75, 75, 1)',
+            borderWidth: 1,
+            fill: false,
+            yAxisID: 'rsi'
+          }]
+        },
+        options: {
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: 'day',
+                stepSize: 1,
+                tooltipFormat: 'yyyy-MM-dd',
+                displayFormats: {
+                  day: 'yyyy-MM-dd'
+                }
+              }
+            },
+            y: {
+              beginAtZero: false, // Ensure the y-axis starts at zero
+              ticks: {
+                callback: function(value) {
+                  return value.toFixed(2); // Display absolute values
+                }
+              }
+            },
+            rsi: {
+              position: 'right',
+              beginAtZero: false,
+              ticks: {
+                callback: function(value) {
+                  return value.toFixed(2); // Display absolute values
+                }
+              }
+            }
+          }
+        }
       });
-    </script>
-  </body>
+
+      const btcChart = new Chart(btcCtx, {
+        type: 'line',
+        data: {
+          labels: btcLabels,
+          datasets: [{
+            label: 'BTC Árfolyam (USD)',
+            data: btcPrices,
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 1,
+            fill: false
+          }, {
+            label: 'BTC RSI',
+            data: btcRsi,
+            borderColor: 'rgba(99, 132, 255, 1)',
+            borderWidth: 1,
+            fill: false,
+            yAxisID: 'rsi'
+          }]
+        },
+        options: {
+          scales: {
+            x: {
+              type: 'time',
+              time: {
+                unit: 'day',
+                stepSize: 1,
+                tooltipFormat: 'yyyy-MM-dd',
+                displayFormats: {
+                  day: 'yyyy-MM-dd'
+                }
+              }
+            },
+            y: {
+              beginAtZero: false, // Ensure the y-axis starts at zero
+              ticks: {
+                callback: function(value) {
+                  return value.toFixed(2); // Display absolute values
+                }
+              }
+            },
+            rsi: {
+              position: 'right',
+              beginAtZero: false,
+              ticks: {
+                callback: function(value) {
+                  return value.toFixed(2); // Display absolute values
+                }
+              }
+            }
+          }
+        }
+      });
+
+      function fetchCurrentPrice(endpoint, currentPriceElement, labels, prices, rsi, chart) {
+        fetch(endpoint)
+          .then((response) => response.json())
+          .then((data) => {
+            let roundedNumber = parseFloat(data.price).toFixed(2);
+            currentPriceElement.textContent = `Aktuális Árfolyam: ${roundedNumber} USD`;
+
+            const now = new Date();
+            labels.push(now);
+            prices.push(parseFloat(roundedNumber));
+
+            if (labels.length > maxPoints) {
+              labels.shift();
+              prices.shift();
+            }
+
+            if (prices.length >= 14) {
+              const rsiValues = calculateRSI(prices);
+              rsi.push(rsiValues[rsiValues.length - 1]);
+              if (rsi.length > maxPoints) {
+                rsi.shift();
+              }
+            }
+
+            chart.update();
+          })
+          .catch((error) => {
+            console.error(`Error fetching current price:`, error);
+            currentPriceElement.textContent = "Hiba történt az aktuális árfolyam betöltésekor.";
+          });
+      }
+
+      function fetchHistory(endpoint, labels, prices, rsi, chart, callback) {
+        fetch(endpoint)
+          .then((response) => response.json())
+          .then((data) => {
+            data.forEach(candle => {
+              const date = new Date(candle[0]);
+              labels.push(date);
+              prices.push(parseFloat(candle[4])); // Closing price
+            });
+
+            if (prices.length >= 14) {
+              const rsiValues = calculateRSI(prices);
+              rsi.push(...rsiValues);
+            }
+
+            chart.update();
+            if (callback) callback();
+          })
+          .catch((error) => {
+            console.error("Error fetching price history:", error);
+          });
+      }
+
+      // Fetch the ETH and BTC price history immediately when the page loads
+      fetchHistory(ethHistoryEndpoint, ethLabels, ethPrices, ethRsi, ethChart, () => {
+        // Refresh the current ETH price every second (1000 milliseconds)
+        setInterval(() => fetchCurrentPrice(ethCurrentPriceEndpoint, ethCurrentPriceElement, ethLabels, ethPrices, ethRsi, ethChart), 1000);
+      });
+
+      fetchHistory(btcHistoryEndpoint, btcLabels, btcPrices, btcRsi, btcChart, () => {
+        // Refresh the current BTC price every second (1000 milliseconds)
+        setInterval(() => fetchCurrentPrice(btcCurrentPriceEndpoint, btcCurrentPriceElement, btcLabels, btcPrices, btcRsi, btcChart), 1000);
+      });
+    });
+  </script>
+</body>
 </html>
